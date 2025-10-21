@@ -9,3 +9,9 @@ for build and publish
 
 python -m build
 twine upload --repository testpypi dist/\*
+
+sphinx setup
+
+spinx-quickstart docs
+
+in docs folder .\make html
