@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pynetevents"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python implementation of C# style events"
 readme = "README.md"
 authors = [{ name = "Dr0f0x"}]
@@ -16,14 +16,14 @@ classifiers = [
 keywords = ["events", "csharp", "patterns"]
 dependencies = [
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 
 [project.optional-dependencies]
 dev = ["black", "pytest", "pytest-cov", "pytest-asyncio", "bumpver"]
 packaging = ["build", "twine"]
 
 [tool.bumpver]
-current_version = "0.1.0"
+current_version = "0.1.1"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message  = "Bump version {old_version} -> {new_version}"
 commit          = false
