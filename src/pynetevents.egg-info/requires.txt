@@ -1,0 +1,11 @@
+
+[dev]
+black
+pytest
+pytest-cov
+pytest-asyncio
+bumpver
+
+[packaging]
+build
+twine

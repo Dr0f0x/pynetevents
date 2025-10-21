@@ -1,0 +1,11 @@
+LICENSE
+MANIFEST.in
+README.md
+pyproject.toml
+src/pynetevents/__init__.py
+src/pynetevents/events.py
+src/pynetevents.egg-info/PKG-INFO
+src/pynetevents.egg-info/SOURCES.txt
+src/pynetevents.egg-info/dependency_links.txt
+src/pynetevents.egg-info/requires.txt
+src/pynetevents.egg-info/top_level.txt
