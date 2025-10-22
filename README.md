@@ -15,3 +15,5 @@ sphinx setup
 spinx-quickstart docs
 
 in docs folder .\make html
+
+python -m pip install -e . for editable install

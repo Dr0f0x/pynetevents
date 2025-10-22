@@ -20,6 +20,39 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+"""
+PyNetEvents - A simple and flexible event system for Python.
+
+This package provides an event-driven programming framework that allows you to
+create event slots and attach multiple listeners (both synchronous and asynchronous)
+to them. When events are fired, all registered listeners are notified.
+
+Features:
+- Support for both synchronous and asynchronous event handlers
+- Simple subscription/unsubscription API with operator overloading
+- Thread-safe event handling
+- Automatic error handling and logging for event listeners
+
+Example:
+    >>> from pynetevents import EventSlot
+    >>>
+    >>> # Create an event slot
+    >>> on_data_received = EventSlot("data_received")
+    >>>
+    >>> # Add listeners
+    >>> def sync_handler(data):
+    ...     print(f"Received: {data}")
+    >>>
+    >>> async def async_handler(data):
+    ...     print(f"Async received: {data}")
+    >>>
+    >>> on_data_received += sync_handler
+    >>> on_data_received += async_handler
+    >>>
+    >>> # Fire the event
+    >>> on_data_received("Hello, World!")
+"""
+
 from .events import EventSlot, EventsException
 
 __all__ = [

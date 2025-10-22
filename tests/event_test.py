@@ -1,8 +1,11 @@
 # Code under test
 # tests/test_eventslot.py
+
 import asyncio
 import pytest
-from events import EventSlot
+
+from pynetevents import EventSlot
+
 
 @pytest.mark.asyncio
 async def test_eventslot_calls_sync_and_async_listeners():
@@ -27,9 +30,13 @@ async def test_eventslot_calls_sync_and_async_listeners():
     assert ("sync", "hello") in called
     assert ("async", "hello") in called
 
+
 def test_eventslot_unsubscribe():
     called = []
-    def listener(x): called.append(x)
+
+    def listener(x):
+        called.append(x)
+
     slot = EventSlot("test")
     slot += listener
     slot -= listener

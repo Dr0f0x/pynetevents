@@ -20,6 +20,18 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+"""
+Event system implementation for Python applications.
+
+This module provides a simple and flexible event system that allows you to create
+event slots that can have multiple listeners (both synchronous and asynchronous)
+attached to them. When an event is fired, all attached listeners are called.
+
+Classes:
+    EventSlot: A slot to which callbacks can be attached and fired.
+    EventsException: Base exception class for events-related errors.
+"""
+
 import asyncio
 import inspect
 from typing import Any, Callable, Iterator, List
@@ -47,8 +59,8 @@ class EventSlot:
                     asyncio.create_task(listener(*args, **kwargs))
                 else:
                     listener(*args, **kwargs)
-            except Exception as e:
-                logger.exception(f"Error in listener for event '{self.name}': {e}")
+            except RuntimeError as e:
+                logger.exception("Error in listener for event '%s': %s", self.name, e)
 
     def subscribe(self, listener: Callable[..., Any]) -> None:
         """Add a listener to the event slot."""
@@ -80,4 +92,4 @@ class EventSlot:
 
 
 class EventsException(Exception):
-    pass
+    """Base exception class for events-related errors."""
