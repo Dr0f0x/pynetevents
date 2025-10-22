@@ -47,17 +47,47 @@ class EventSlot:
         self.name: str = name
         self._listeners: List[Callable[..., Any]] = []
 
+        # Hold references to created asyncio tasks to prevent them being
+        # garbage-collected before they start running.
+        self._tasks: List[asyncio.Task] = []
+
     def __repr__(self) -> str:
         return f"EventSlot('{self.name}')"
 
-    def __call__(self, *args, **kwargs) -> None:
-        """Fire the event, calling all listeners."""
-        for listener in list(self._listeners):
+    def invoke(self, *args, **kwargs) -> None:
+        """
+        Invoke all listeners passing the given args and kwargs. Synchronous
+        listeners are called directly, while asynchronouslisteners are
+        scheduled (fire and forget).
+        """
+        for listener in self._listeners:
 
             try:
                 if inspect.iscoroutinefunction(listener):
-                    asyncio.create_task(listener(*args, **kwargs))
+                    task = asyncio.create_task(listener(*args, **kwargs))
+                    # Keep a reference to prevent premature garbage collection.
+                    self._tasks.append(task)
+                    # Remove the task from the list when done to avoid memory leaks.
+                    task.add_done_callback(
+                        lambda t: self._tasks.remove(t) if t in self._tasks else None
+                    )
                 else:
+                    listener(*args, **kwargs)
+            except RuntimeError as e:
+                logger.exception("Error in listener for event '%s': %s", self.name, e)
+
+    async def invoke_async(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Invoke all listeners passing the given args and kwargs, awaiting coroutine functions and
+        calling normal functions synchronously.
+        """
+        for listener in self._listeners:
+            try:
+                if inspect.iscoroutinefunction(listener):
+                    # Await the coroutine
+                    await listener(*args, **kwargs)
+                else:
+                    # Call synchronous functions normally
                     listener(*args, **kwargs)
             except RuntimeError as e:
                 logger.exception("Error in listener for event '%s': %s", self.name, e)
@@ -74,21 +104,71 @@ class EventSlot:
 
     # Operator overloads for convenience
     def __iadd__(self, listener: Callable[..., Any]) -> "EventSlot":
+        """Adds a listener, used by the '+=' operator."""
         self.subscribe(listener)
         return self
 
     def __isub__(self, listener: Callable[..., Any]) -> "EventSlot":
+        """Removes a listener, used by the '-=' operator."""
         self.unsubscribe(listener)
         return self
 
+    # dunder methods
+    def __call__(self, *args, **kwds) -> None:
+        """Invoke the event slot, calling all listeners with the passed args."""
+        self.invoke(*args, **kwds)
+
     def __len__(self) -> int:
+        """Return the number of listeners attached to the event slot."""
         return len(self._listeners)
 
     def __iter__(self) -> Iterator[Callable[..., Any]]:
+        """Return an iterator over the listeners attached to the event slot."""
         return iter(self._listeners)
 
     def __getitem__(self, index: int) -> Callable[..., Any]:
+        """Get a listener by index."""
         return self._listeners[index]
+
+
+class Event:
+    """Descriptor for event slots in classes."""
+
+    def __init__(self, name: str | None = None):
+        self.name = name
+        self._instance_slots = {}
+
+    def __set_name__(self, owner, name):
+        """Automatically set the event name from the attribute name if not given."""
+        if self.name is None:
+            self.name = name
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self  # Accessed on the class
+
+        # Lazily create per-instance slot
+        if instance not in self._instance_slots:
+            new_slot = EventSlot(self.name)
+            self._instance_slots[instance] = new_slot
+            return new_slot
+        return self._instance_slots[instance]
+
+    def __set__(self, instance, value) -> None:
+        """
+        Allow only assignment that comes from in-place operations:
+        - If value is the same Event instance accept (no-op), otherwise, forbid reassignment.
+        """
+
+        # Accept if user assigns back the exact event object (from +=/-=)
+        current_slot = self._instance_slots.get(instance)
+        if value is current_slot:
+            return
+
+        raise AttributeError(
+            f"Event '{self.name}' can only be modified via '+=' or '-=' operations. (or set to "
+            + "modified versions of same instance)",
+        )
 
 
 class EventsException(Exception):
