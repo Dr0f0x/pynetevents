@@ -44,8 +44,9 @@ logger = logging.getLogger()
 class EventSlot:
     """A slot to which callbacks can be attached and fired."""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, strict: bool = True):
         self.name: str = name
+        self.strict: bool = strict
         self._listeners: List[Callable[..., Any]] = []
 
         # Hold references to created asyncio tasks to prevent them being
@@ -74,10 +75,16 @@ class EventSlot:
                     )
                 else:
                     listener(*args, **kwargs)
-            except Exception as e:
-                raise EventsException(
-                    f"Error in listener for event '{self.name}': {e}",
-                ) from e
+            except Exception as e:  # pylint: disable=broad-except
+                if self.strict:
+                    raise EventsException(
+                        f"Error in listener for event '{self.name}': {e}",
+                    ) from e
+                logger.error(
+                    "Error in listener for event '%s': %s",
+                    self.name,
+                    e,
+                )
 
     async def invoke_async(self, *args: Any, **kwargs: Any) -> None:
         """
@@ -92,10 +99,16 @@ class EventSlot:
                 else:
                     # Call synchronous functions normally
                     listener(*args, **kwargs)
-            except Exception as e:
-                raise EventsException(
-                    f"Error in listener for event '{self.name}': {e}",
-                ) from e
+            except Exception as e:  # pylint: disable=broad-except
+                if self.strict:
+                    raise EventsException(
+                        f"Error in listener for event '{self.name}': {e}",
+                    ) from e
+                logger.error(
+                    "Error in listener for event '%s': %s",
+                    self.name,
+                    e,
+                )
 
     def subscribe(self, listener: Callable[..., Any]) -> None:
         """Add a listener to the event slot."""
@@ -106,6 +119,10 @@ class EventSlot:
         """Remove a listener from the event slot."""
         while listener in self._listeners:
             self._listeners.remove(listener)
+
+    def set_strict(self, strict: bool) -> None:
+        """Set the strict mode for error handling."""
+        self.strict = strict
 
     # Operator overloads for convenience
     def __iadd__(self, listener: Callable[..., Any]) -> "EventSlot":
@@ -141,24 +158,31 @@ class Event:
 
     def __init__(self, name: str | None = None):
         self.name = name
-        self._instance_slots = {}
 
     def __set_name__(self, owner, name):
         """Automatically set the event name from the attribute name if not given."""
         if self.name is None:
             self.name = name
 
-    def __get__(self, instance, owner):
+    def __get__(self, instance, owner) -> "EventSlot":
         """Get the event slot for the instance."""
         if instance is None:
             return self  # Accessed on the class
 
-        # Lazily create per-instance slot
-        if instance not in self._instance_slots:
-            new_slot = EventSlot(self.name)
-            self._instance_slots[instance] = new_slot
-            return new_slot
-        return self._instance_slots[instance]
+        existing = instance.__dict__.get(self.name)
+        if existing is not None:
+            if isinstance(existing, EventSlot):
+                # class instance has its own EventSlot stored for the name
+                return existing
+            raise TypeError(
+                f"Attribute '{self.name}' on {type(instance)!r} is not an EventSlot but has same name as declared event. "
+                f"(found {type(existing)!r})."
+            )
+
+        # create a new EventSlot and store it in the instance dict
+        new_slot = EventSlot(self.name)
+        instance.__dict__[self.name] = new_slot
+        return new_slot
 
     def __set__(self, instance, value) -> None:
         """
@@ -167,7 +191,7 @@ class Event:
         """
 
         # Accept if user assigns back the exact event object (from +=/-=)
-        current_slot = self._instance_slots.get(instance)
+        current_slot = instance.__dict__.get(self.name)
         if value is current_slot:
             return
 
