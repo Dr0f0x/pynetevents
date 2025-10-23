@@ -3,14 +3,17 @@ Tests for the EventSlot class in the pynetevents package.
 """
 
 import asyncio
+from unittest.mock import Mock
 import pytest
 
 from pynetevents import EventSlot
-from pynetevents.events import EventsException
+from pynetevents.events import EventExecutionError
+
+# pylint: disable=missing-function-docstring
+# pylint: disable=missing-class-docstring
 
 
 def test_invoke_sync_listener():
-    """Test that invoke calls synchronous listeners immediately."""
     called = []
 
     def sync_listener(x):
@@ -25,7 +28,6 @@ def test_invoke_sync_listener():
 
 @pytest.mark.asyncio
 async def test_invoke_async_listener_fire_and_forget():
-    """Test that invoke schedules asynchronous listeners (fire-and-forget)."""
     called = []
 
     async def async_listener(x):
@@ -46,7 +48,6 @@ async def test_invoke_async_listener_fire_and_forget():
 
 @pytest.mark.asyncio
 async def test_invoke_async_awaits_all():
-    """Test that invoke_async awaits async listeners and calls sync ones."""
     called = []
 
     def sync_listener(x):
@@ -67,7 +68,6 @@ async def test_invoke_async_awaits_all():
 
 
 def test_subscribe_and_unsubscribe_methods():
-    """Test subscribing and unsubscribing with the verbose methods."""
     called = []
 
     def listener(x):
@@ -84,7 +84,6 @@ def test_subscribe_and_unsubscribe_methods():
 
 
 def test_iadd_isub_dunder_operators():
-    """Test adding/removing listeners using += and -= operators."""
     called = []
 
     def listener(x):
@@ -100,8 +99,7 @@ def test_iadd_isub_dunder_operators():
     assert called == ["event"]  # listener removed
 
 
-def test_no_duplicate_listeners():
-    """Test that adding the same listener twice does not duplicate it."""
+def test_duplicate_listeners_with_not_allowed_throws_exception():
     called = []
 
     def listener(x):
@@ -111,9 +109,11 @@ def test_no_duplicate_listeners():
 
     # Add the same listener multiple times
     slot.subscribe(listener)
-    slot.subscribe(listener)
-    slot += listener
-    slot += listener
+    with pytest.raises(EventExecutionError) as excinfo:
+        slot.subscribe(listener)
+        slot += listener
+        slot += listener
+    assert "is already subscribed to event" in str(excinfo.value)
 
     # There should only be one listener in the slot
     assert len(slot) == 1
@@ -123,9 +123,29 @@ def test_no_duplicate_listeners():
     assert called == ["event"]
 
 
+def test_allow_duplicate_listeners():
+    called = []
+
+    def listener(x):
+        called.append(x)
+
+    slot = EventSlot("test", allow_duplicate_listeners=True)
+
+    # Add the same listener multiple times
+    slot.subscribe(listener)
+    slot.subscribe(listener)
+    slot += listener
+
+    # There should be three listeners in the slot
+    assert len(slot) == 3
+
+    # Invoke it, should be called three times
+    slot("event")
+    assert called == ["event", "event", "event"]
+
+
 @pytest.mark.asyncio
 async def test_len_and_iter_with_listeners():
-    """Test __len__ and __iter__ return correct values."""
     called = []
 
     def listener1(x):
@@ -146,7 +166,6 @@ async def test_len_and_iter_with_listeners():
 
 
 def test_getitem_returns_correct_listener():
-    """Test that __getitem__ returns the listener at the given index."""
     called = []
 
     def listener1(x):
@@ -170,13 +189,11 @@ def test_getitem_returns_correct_listener():
 
 
 def test_repr_returns_expected_string():
-    """Test that __repr__ returns the correct string representation."""
     slot = EventSlot("my_event")
-    assert repr(slot) == "EventSlot('my_event')"
+    assert "my_event" in repr(slot) and "listeners=0" in repr(slot)
 
 
-def test_listener_propagates_exceptions():
-    """Test that exceptions from listeners are properly caught and logged."""
+def test_listener_with_propagate_true_propagates_exceptions():
 
     slot = EventSlot("test_exception")
     called = []
@@ -191,28 +208,96 @@ def test_listener_propagates_exceptions():
     slot += good_listener
     slot += bad_listener
 
-    with pytest.raises(EventsException) as excinfo:
+    with pytest.raises(EventExecutionError) as excinfo:
         slot()
     assert "Error in listener for event 'test_exception'" in excinfo.value.args[0]
 
 
 @pytest.mark.asyncio
-async def test_async_listener_propagate_exceptions():
-    """Test that exceptions from async listeners are properly caught and logged."""
+async def test_async_listener_with_propagate_false_propagate_exceptions():
 
     slot = EventSlot("test_async_exception")
     called = []
 
     async def good_async_listener():
+        await asyncio.sleep(0.01)
         called.append("good_async")
 
     async def bad_async_listener():
         called.append("bad_async_before")
+        await asyncio.sleep(0.01)
         raise ValueError("Async test exception")
 
     slot += good_async_listener
     slot += bad_async_listener
 
-    with pytest.raises(EventsException) as excinfo:
+    with pytest.raises(EventExecutionError) as excinfo:
         await slot.invoke_async()
     assert "Error in listener for event 'test_async_exception'" in excinfo.value.args[0]
+
+
+def test_listener_with_propagate_false_only_logs(monkeypatch):
+    slot = EventSlot("test_no_propagate", propagate_exceptions=False)
+    called = []
+
+    mock_logger = Mock()
+    monkeypatch.setattr("pynetevents.events.logger", mock_logger)
+
+    def good_listener():
+        called.append("good")
+
+    def bad_listener():
+        called.append("bad_before")
+        raise ValueError("Test exception")
+
+    slot += good_listener
+    slot += bad_listener
+
+    # Should not raise despite bad_listener throwing
+    slot()
+
+    mock_logger.error.assert_called_once()
+    args, _ = mock_logger.error.call_args
+    # first arg is the format string, second is event name, third is the exception instance
+    assert args[0] == "Error in listener for event '%s': %s"
+    assert args[1] == "test_no_propagate"
+    assert isinstance(args[2], ValueError)
+
+    assert called == ["good", "bad_before"]
+
+
+@pytest.mark.asyncio
+async def test_async_listener_with_propagate_false_only_logs(monkeypatch):
+    slot = EventSlot("test_no_propagate", propagate_exceptions=False)
+    called = []
+
+    mock_logger = Mock()
+    monkeypatch.setattr("pynetevents.events.logger", mock_logger)
+
+    async def good_listener():
+        await asyncio.sleep(0.01)
+        called.append("good")
+
+    async def bad_listener():
+        called.append("bad_before")
+        await asyncio.sleep(0.01)
+        raise ValueError("Test exception")
+
+    slot += good_listener
+    slot += bad_listener
+
+    # Should not raise despite bad_listener throwing
+    await slot.invoke_async()
+
+    mock_logger.error.assert_called_once()
+    args, _ = mock_logger.error.call_args
+    # first arg is the format string, second is event name, third is the exception instance
+    assert args[0] == "Error in listener for event '%s': %s"
+    assert args[1] == "test_no_propagate"
+    assert isinstance(args[2], ValueError)
+
+    assert called == ["good", "bad_before"]
+
+
+if __name__ == "__main__":
+    pass

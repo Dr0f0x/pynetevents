@@ -35,7 +35,7 @@ Classes:
 
 import asyncio
 import inspect
-from typing import Any, Callable, Iterator, List
+from typing import Any, Callable, Iterator, List, Optional
 import logging
 
 logger = logging.getLogger()
@@ -44,9 +44,28 @@ logger = logging.getLogger()
 class EventSlot:
     """A slot to which callbacks can be attached and fired."""
 
-    def __init__(self, name: str, strict: bool = True):
-        self.name: str = name
-        self.strict: bool = strict
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        propagate_exceptions: Optional[bool] = None,
+        allow_duplicate_listeners: Optional[bool] = None,
+    ):
+        self.name = name
+        # If a flag is None, use EventSlot's default but record that it was defaulted.
+        if propagate_exceptions is None:
+            self.propagate_exceptions: bool = True
+            self.propagate_exceptions_was_default: bool = True
+        else:
+            self.propagate_exceptions = propagate_exceptions
+            self.propagate_exceptions_was_default: bool = False
+
+        if allow_duplicate_listeners is None:
+            self.allow_duplicate_listeners: bool = False
+            self.allow_duplicate_listeners_was_default: bool = True
+        else:
+            self.allow_duplicate_listeners = allow_duplicate_listeners
+            self.allow_duplicate_listeners_was_default: bool = False
+
         self._listeners: List[Callable[..., Any]] = []
 
         # Hold references to created asyncio tasks to prevent them being
@@ -54,7 +73,7 @@ class EventSlot:
         self._tasks: List[asyncio.Task] = []
 
     def __repr__(self) -> str:
-        return f"EventSlot('{self.name}')"
+        return f"EventSlot('name={self.name}, listeners={len(self._listeners)}')"
 
     def invoke(self, *args, **kwargs) -> None:
         """
@@ -76,8 +95,8 @@ class EventSlot:
                 else:
                     listener(*args, **kwargs)
             except Exception as e:  # pylint: disable=broad-except
-                if self.strict:
-                    raise EventsException(
+                if self.propagate_exceptions:
+                    raise EventExecutionError(
                         f"Error in listener for event '{self.name}': {e}",
                     ) from e
                 logger.error(
@@ -100,8 +119,8 @@ class EventSlot:
                     # Call synchronous functions normally
                     listener(*args, **kwargs)
             except Exception as e:  # pylint: disable=broad-except
-                if self.strict:
-                    raise EventsException(
+                if self.propagate_exceptions:
+                    raise EventExecutionError(
                         f"Error in listener for event '{self.name}': {e}",
                     ) from e
                 logger.error(
@@ -112,17 +131,21 @@ class EventSlot:
 
     def subscribe(self, listener: Callable[..., Any]) -> None:
         """Add a listener to the event slot."""
-        if listener not in self._listeners:
+        if not self.allow_duplicate_listeners:
+            if listener not in self._listeners:
+                self._listeners.append(listener)
+            else:
+                raise EventExecutionError(
+                    f"Listener {listener} is already subscribed to event '{self.name}'. \
+                        (you can allow this by setting allow_duplicate_listeners=True)"
+                )
+        else:
             self._listeners.append(listener)
 
     def unsubscribe(self, listener: Callable[..., Any]) -> None:
         """Remove a listener from the event slot."""
         while listener in self._listeners:
             self._listeners.remove(listener)
-
-    def set_strict(self, strict: bool) -> None:
-        """Set the strict mode for error handling."""
-        self.strict = strict
 
     # Operator overloads for convenience
     def __iadd__(self, listener: Callable[..., Any]) -> "EventSlot":
@@ -156,32 +179,80 @@ class EventSlot:
 class Event:
     """Descriptor for event slots in classes."""
 
-    def __init__(self, name: str | None = None):
-        self.name = name
+    def __init__(
+        self,
+        propagate_exceptions: Optional[bool] = None,
+        allow_duplicate_listeners: Optional[bool] = None,
+    ):
+        self.__name: Optional[str] = None
+        self.propagate_exceptions: Optional[bool] = propagate_exceptions
+        self.allow_duplicate_listeners: Optional[bool] = allow_duplicate_listeners
+
+    @property
+    def name(self) -> str:
+        """Get the name of the event."""
+        return self.__name
 
     def __set_name__(self, owner, name):
         """Automatically set the event name from the attribute name if not given."""
-        if self.name is None:
-            self.name = name
+        self.__name = name
+
+    def __param_consistency_check(self, instance, existing: EventSlot) -> None:
+        """Check that the existing EventSlot matches the declared parameters."""
+        problems = []
+        if (
+            self.propagate_exceptions is not None
+            and not existing.propagate_exceptions_was_default
+            and existing.propagate_exceptions != self.propagate_exceptions
+        ):
+            problems.append("propagate_exceptions")
+        if (
+            self.allow_duplicate_listeners is not None
+            and not existing.allow_duplicate_listeners_was_default
+            and existing.allow_duplicate_listeners != self.allow_duplicate_listeners
+        ):
+            problems.append("allow_duplicate_listeners")
+        if (
+            self.name is not None
+            and existing.name is not None
+            and existing.name != self.name
+        ):
+            problems.append("name")
+        if problems:
+            raise AttributeError(
+                f"EventSlot '{self.name}' on {type(instance)!r} has inconsistent parameters \
+                    compared to declared event descriptor. "
+                f"(existing: name={existing.name} propagate_exceptions={existing.propagate_exceptions}, "  # pylint: disable=line-too-long
+                f"allow_duplicate_listeners={existing.allow_duplicate_listeners}; "
+                f"declared: name={self.name} propagate_exceptions={self.propagate_exceptions}, "
+                f"allow_duplicate_listeners={self.allow_duplicate_listeners})"
+            )
+
+        # assign desciptor parameters to existing slot if they were defaulted
+        if self.propagate_exceptions is not None:
+            existing.propagate_exceptions = self.propagate_exceptions
+        if self.allow_duplicate_listeners is not None:
+            existing.allow_duplicate_listeners = self.allow_duplicate_listeners
+        existing.name = self.name
 
     def __get__(self, instance, owner) -> "EventSlot":
         """Get the event slot for the instance."""
-        if instance is None:
-            return self  # Accessed on the class
 
         existing = instance.__dict__.get(self.name)
         if existing is not None:
-            if isinstance(existing, EventSlot):
-                # class instance has its own EventSlot stored for the name
-                return existing
-            raise TypeError(
-                f"Attribute '{self.name}' on {type(instance)!r} is not an EventSlot but has same name as declared event. "
-                f"(found {type(existing)!r})."
-            )
+            return existing
 
         # create a new EventSlot and store it in the instance dict
-        new_slot = EventSlot(self.name)
+        kwargs = {}
+        if self.propagate_exceptions is not None:
+            kwargs["propagate_exceptions"] = self.propagate_exceptions
+        if self.allow_duplicate_listeners is not None:
+            kwargs["allow_duplicate_listeners"] = self.allow_duplicate_listeners
+
+        new_slot = EventSlot(self.name, **kwargs)
         instance.__dict__[self.name] = new_slot
+        # not needed as event slot instance was created with params
+        # self.__param_check_with_existing_needed = False
         return new_slot
 
     def __set__(self, instance, value) -> None:
@@ -194,6 +265,16 @@ class Event:
         current_slot = instance.__dict__.get(self.name)
         if value is current_slot:
             return
+        if current_slot is None:
+            if isinstance(value, EventSlot):
+                self.__param_consistency_check(instance, value)
+                instance.__dict__[self.name] = value
+                return
+            raise TypeError(
+                f"Tried to assign a non-EventSlot value to event attribute '{self.name}'\
+                        on {type(instance)!r} "
+                f"(found {type(value)!r})."
+            )
 
         raise AttributeError(
             f"Event '{self.name}' can only be modified via '+=' or '-=' operations. (or set to "
@@ -201,5 +282,5 @@ class Event:
         )
 
 
-class EventsException(Exception):
+class EventExecutionError(Exception):
     """Base exception class for events-related errors."""
