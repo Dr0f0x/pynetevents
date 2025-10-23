@@ -6,6 +6,7 @@ import asyncio
 import pytest
 
 from pynetevents import EventSlot
+from pynetevents.events import EventsException
 
 
 def test_invoke_sync_listener():
@@ -172,3 +173,46 @@ def test_repr_returns_expected_string():
     """Test that __repr__ returns the correct string representation."""
     slot = EventSlot("my_event")
     assert repr(slot) == "EventSlot('my_event')"
+
+
+def test_listener_propagates_exceptions():
+    """Test that exceptions from listeners are properly caught and logged."""
+
+    slot = EventSlot("test_exception")
+    called = []
+
+    def good_listener():
+        called.append("good")
+
+    def bad_listener():
+        called.append("bad_before")
+        raise ValueError("Test exception")
+
+    slot += good_listener
+    slot += bad_listener
+
+    with pytest.raises(EventsException) as excinfo:
+        slot()
+    assert "Error in listener for event 'test_exception'" in excinfo.value.args[0]
+
+
+@pytest.mark.asyncio
+async def test_async_listener_propagate_exceptions():
+    """Test that exceptions from async listeners are properly caught and logged."""
+
+    slot = EventSlot("test_async_exception")
+    called = []
+
+    async def good_async_listener():
+        called.append("good_async")
+
+    async def bad_async_listener():
+        called.append("bad_async_before")
+        raise ValueError("Async test exception")
+
+    slot += good_async_listener
+    slot += bad_async_listener
+
+    with pytest.raises(EventsException) as excinfo:
+        await slot.invoke_async()
+    assert "Error in listener for event 'test_async_exception'" in excinfo.value.args[0]

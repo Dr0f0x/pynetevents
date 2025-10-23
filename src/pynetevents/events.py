@@ -29,6 +29,7 @@ attached to them. When an event is fired, all attached listeners are called.
 
 Classes:
     EventSlot: A slot to which callbacks can be attached and fired.
+    Event: Descriptor for event slots in classes to restrict access to the event system.
     EventsException: Base exception class for events-related errors.
 """
 
@@ -73,8 +74,10 @@ class EventSlot:
                     )
                 else:
                     listener(*args, **kwargs)
-            except RuntimeError as e:
-                logger.exception("Error in listener for event '%s': %s", self.name, e)
+            except Exception as e:
+                raise EventsException(
+                    f"Error in listener for event '{self.name}': {e}",
+                ) from e
 
     async def invoke_async(self, *args: Any, **kwargs: Any) -> None:
         """
@@ -89,8 +92,10 @@ class EventSlot:
                 else:
                     # Call synchronous functions normally
                     listener(*args, **kwargs)
-            except RuntimeError as e:
-                logger.exception("Error in listener for event '%s': %s", self.name, e)
+            except Exception as e:
+                raise EventsException(
+                    f"Error in listener for event '{self.name}': {e}",
+                ) from e
 
     def subscribe(self, listener: Callable[..., Any]) -> None:
         """Add a listener to the event slot."""
@@ -144,6 +149,7 @@ class Event:
             self.name = name
 
     def __get__(self, instance, owner):
+        """Get the event slot for the instance."""
         if instance is None:
             return self  # Accessed on the class
 
