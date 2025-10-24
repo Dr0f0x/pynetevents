@@ -224,6 +224,13 @@ class _EventSlotBase(ABC):
         """Get a listener by index."""
         return self._listeners[index]
 
+    def __getstate__(self):
+        """Forbid pickling"""
+        raise NotImplementedError("EventSlots cannot be pickled or unpickled")
+
+    def __setstate__(self, state):
+        raise NotImplementedError("EventSlots cannot be pickled or unpickled")
+
 
 class EventSlot(_EventSlotBase):
     """A slot to which callbacks can be attached and fired; += and

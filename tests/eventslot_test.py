@@ -3,6 +3,7 @@ Tests for the EventSlot class in the pynetevents package.
 """
 
 import asyncio
+import pickle
 from unittest.mock import Mock
 import pytest
 
@@ -321,6 +322,18 @@ async def test_async_listener_with_propagate_false_only_logs(monkeypatch):
     assert isinstance(args[2], ValueError)
 
     assert called == ["good", "bad_before"]
+
+
+def test_eventslot_cannot_be_pickled():
+    slot = EventSlot("test")
+
+    with pytest.raises(NotImplementedError) as excinfo:
+        pickle.dumps(slot)
+
+    with pytest.raises(NotImplementedError) as excinfo:
+        slot.__setstate__(None)
+
+    assert "cannot be pickled" in str(excinfo.value)
 
 
 if __name__ == "__main__":

@@ -145,7 +145,8 @@ def test_unsub_with_weak_removes_not_weak_also():
     assert not called
 
 
-def test_deleted_weak_ref_listener_gets_silently_removed():
+@pytest.mark.asyncio
+async def test_deleted_weak_ref_listener_gets_silently_removed():
     called = []
     listener = ListenerA(called)
     slot = EventSlotWeakRef()
@@ -155,6 +156,16 @@ def test_deleted_weak_ref_listener_gets_silently_removed():
     gc.collect()
 
     slot("data")
+
+    assert len(slot) == 0
+
+    listener = ListenerA(called)
+
+    slot += listener.method
+    del listener
+    gc.collect()
+
+    await slot.invoke_async("data")
 
     assert len(slot) == 0
 
