@@ -6,8 +6,7 @@ import asyncio
 from unittest.mock import Mock
 import pytest
 
-from pynetevents import EventSlot
-from pynetevents.events import EventExecutionError
+from pynetevents import EventSlot, EventExecutionError
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=missing-class-docstring
@@ -31,7 +30,7 @@ async def test_invoke_async_listener_fire_and_forget():
     called = []
 
     async def async_listener(x):
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
         called.append(("async", x))
 
     slot = EventSlot("test")
@@ -54,7 +53,7 @@ async def test_invoke_async_awaits_all():
         called.append(("sync", x))
 
     async def async_listener(x):
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
         called.append(("async", x))
 
     slot = EventSlot("test")
@@ -144,6 +143,28 @@ def test_allow_duplicate_listeners():
     assert called == ["event", "event", "event"]
 
 
+def test_duplicates_removed_on_unsubscribe():
+    called = []
+
+    def listener(x):
+        called.append(x)
+
+    slot = EventSlot("test", allow_duplicate_listeners=True)
+
+    # Add the same listener multiple times
+    slot.subscribe(listener)
+    slot.subscribe(listener)
+    slot += listener
+    slot -= listener
+
+    # There should be three listeners in the slot
+    assert len(slot) == 0
+
+    # Invoke it, should be called three times
+    slot("event")
+    assert not called
+
+
 @pytest.mark.asyncio
 async def test_len_and_iter_with_listeners():
     called = []
@@ -193,6 +214,9 @@ def test_repr_returns_expected_string():
     assert "my_event" in repr(slot) and "listeners=0" in repr(slot)
 
 
+TEST_EXCEPTION_MESSAGE = "Test exception"
+
+
 def test_listener_with_propagate_true_propagates_exceptions():
 
     slot = EventSlot("test_exception")
@@ -203,7 +227,7 @@ def test_listener_with_propagate_true_propagates_exceptions():
 
     def bad_listener():
         called.append("bad_before")
-        raise ValueError("Test exception")
+        raise ValueError(TEST_EXCEPTION_MESSAGE)
 
     slot += good_listener
     slot += bad_listener
@@ -248,7 +272,7 @@ def test_listener_with_propagate_false_only_logs(monkeypatch):
 
     def bad_listener():
         called.append("bad_before")
-        raise ValueError("Test exception")
+        raise ValueError(TEST_EXCEPTION_MESSAGE)
 
     slot += good_listener
     slot += bad_listener
@@ -281,7 +305,7 @@ async def test_async_listener_with_propagate_false_only_logs(monkeypatch):
     async def bad_listener():
         called.append("bad_before")
         await asyncio.sleep(0.01)
-        raise ValueError("Test exception")
+        raise ValueError(TEST_EXCEPTION_MESSAGE)
 
     slot += good_listener
     slot += bad_listener
@@ -300,4 +324,4 @@ async def test_async_listener_with_propagate_false_only_logs(monkeypatch):
 
 
 if __name__ == "__main__":
-    pass
+    pytest.main("tests/eventslot_test.py")

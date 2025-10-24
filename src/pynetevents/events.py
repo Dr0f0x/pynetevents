@@ -33,16 +33,18 @@ Classes:
     EventsException: Base exception class for events-related errors.
 """
 
+from abc import ABC
 import asyncio
 import inspect
+import weakref
 from typing import Any, Callable, Iterator, List, Optional
 import logging
 
 logger = logging.getLogger()
 
 
-class EventSlot:
-    """A slot to which callbacks can be attached and fired."""
+class _EventSlotBase(ABC):
+    """Base class for EventSlot implementations."""
 
     def __init__(
         self,
@@ -81,11 +83,18 @@ class EventSlot:
         listeners are called directly, while asynchronouslisteners are
         scheduled (fire and forget).
         """
+        dead_listeners = []
+
         for listener in self._listeners:
+            listener_exc = self.__get_executable_listener(listener)
+
+            if listener_exc is None:
+                dead_listeners.append(listener)
+                continue
 
             try:
-                if inspect.iscoroutinefunction(listener):
-                    task = asyncio.create_task(listener(*args, **kwargs))
+                if inspect.iscoroutinefunction(listener_exc):
+                    task = asyncio.create_task(listener_exc(*args, **kwargs))
                     # Keep a reference to prevent premature garbage collection.
                     self._tasks.append(task)
                     # Remove the task from the list when done to avoid memory leaks.
@@ -93,7 +102,7 @@ class EventSlot:
                         lambda t: self._tasks.remove(t) if t in self._tasks else None
                     )
                 else:
-                    listener(*args, **kwargs)
+                    listener_exc(*args, **kwargs)
             except Exception as e:  # pylint: disable=broad-except
                 if self.propagate_exceptions:
                     raise EventExecutionError(
@@ -104,20 +113,36 @@ class EventSlot:
                     self.name,
                     e,
                 )
+
+        if dead_listeners:
+            self._listeners = [l for l in self._listeners if l not in dead_listeners]
+
+    def __get_executable_listener(self, listener: Any) -> Callable[..., Any]:
+        """Get the actual callable from a listener, handling weak references."""
+        if isinstance(listener, weakref.WeakMethod):
+            func = listener()
+            return func
+        return listener
 
     async def invoke_async(self, *args: Any, **kwargs: Any) -> None:
         """
         Invoke all listeners passing the given args and kwargs, awaiting coroutine functions and
         calling normal functions synchronously.
         """
+        dead_listeners = []
         for listener in self._listeners:
+            listener_exc = self.__get_executable_listener(listener)
+
+            if listener_exc is None:
+                dead_listeners.append(listener)
+                continue
             try:
-                if inspect.iscoroutinefunction(listener):
+                if inspect.iscoroutinefunction(listener_exc):
                     # Await the coroutine
-                    await listener(*args, **kwargs)
+                    await listener_exc(*args, **kwargs)
                 else:
                     # Call synchronous functions normally
-                    listener(*args, **kwargs)
+                    listener_exc(*args, **kwargs)
             except Exception as e:  # pylint: disable=broad-except
                 if self.propagate_exceptions:
                     raise EventExecutionError(
@@ -129,8 +154,17 @@ class EventSlot:
                     e,
                 )
 
-    def subscribe(self, listener: Callable[..., Any]) -> None:
-        """Add a listener to the event slot."""
+        if dead_listeners:
+            self._listeners = [l for l in self._listeners if l not in dead_listeners]
+
+    def _subscribe(
+        self, listener: Callable[..., Any], use_weakref: bool = False
+    ) -> None:
+        """Add a listener to the event slot, potentially using a weakref."""
+
+        if use_weakref and inspect.ismethod(listener):
+            listener = weakref.WeakMethod(listener)
+
         if not self.allow_duplicate_listeners:
             if listener not in self._listeners:
                 self._listeners.append(listener)
@@ -142,21 +176,36 @@ class EventSlot:
         else:
             self._listeners.append(listener)
 
+    def _unsubscribe(
+        self, listener: Callable[..., Any], use_weakref: bool = False
+    ) -> None:
+        """Remove a listener from the event slot, handling weakrefs if needed."""
+        if use_weakref and inspect.ismethod(listener):
+            # Remove matching WeakMethod references
+            self._listeners = [
+                l
+                for l in self._listeners
+                if not (isinstance(l, weakref.WeakMethod) and l() == listener)
+            ]
+
+        # Remove direct strong references
+        self._listeners = [l for l in self._listeners if l != listener]
+
+    def subscribe(self, listener: Callable[..., Any]) -> None:
+        """Add a listener to the event slot."""
+        self._subscribe(listener, use_weakref=False)
+
     def unsubscribe(self, listener: Callable[..., Any]) -> None:
         """Remove a listener from the event slot."""
-        while listener in self._listeners:
-            self._listeners.remove(listener)
+        self._unsubscribe(listener, use_weakref=False)
 
-    # Operator overloads for convenience
-    def __iadd__(self, listener: Callable[..., Any]) -> "EventSlot":
-        """Adds a listener, used by the '+=' operator."""
-        self.subscribe(listener)
-        return self
+    def subscribe_weak(self, listener: Callable[..., Any]) -> None:
+        """Add a listener to the event slot using a weak reference."""
+        self._subscribe(listener, use_weakref=True)
 
-    def __isub__(self, listener: Callable[..., Any]) -> "EventSlot":
-        """Removes a listener, used by the '-=' operator."""
-        self.unsubscribe(listener)
-        return self
+    def unsubscribe_weak(self, listener: Callable[..., Any]) -> None:
+        """Remove a listener from the event slot that was added using a weak reference."""
+        self._unsubscribe(listener, use_weakref=True)
 
     # dunder methods
     def __call__(self, *args, **kwds) -> None:
@@ -176,6 +225,38 @@ class EventSlot:
         return self._listeners[index]
 
 
+class EventSlot(_EventSlotBase):
+    """A slot to which callbacks can be attached and fired; += and
+    -= use strong references for listeners."""
+
+    # Operator overloads for convenience
+    def __iadd__(self, listener: Callable[..., Any]) -> "EventSlot":
+        """Adds a listener, used by the '+=' operator."""
+        self.subscribe(listener)
+        return self
+
+    def __isub__(self, listener: Callable[..., Any]) -> "EventSlot":
+        """Removes a listener, used by the '-=' operator."""
+        self.unsubscribe(listener)
+        return self
+
+
+class EventSlotWeakRef(_EventSlotBase):
+    """A slot to which callbacks can be attached and fired; += and
+    -= use weak references for listeners."""
+
+    # Operator overloads for convenience
+    def __iadd__(self, listener: Callable[..., Any]) -> "EventSlot":
+        """Adds a listener, used by the '+=' operator."""
+        self.subscribe_weak(listener)
+        return self
+
+    def __isub__(self, listener: Callable[..., Any]) -> "EventSlot":
+        """Removes a listener, used by the '-=' operator."""
+        self.unsubscribe_weak(listener)
+        return self
+
+
 class Event:
     """Descriptor for event slots in classes."""
 
@@ -183,10 +264,12 @@ class Event:
         self,
         propagate_exceptions: Optional[bool] = None,
         allow_duplicate_listeners: Optional[bool] = None,
+        use_weakref_slot: Optional[bool] = None,
     ):
         self.__name: Optional[str] = None
         self.propagate_exceptions: Optional[bool] = propagate_exceptions
         self.allow_duplicate_listeners: Optional[bool] = allow_duplicate_listeners
+        self.use_weakref_slot: Optional[bool] = use_weakref_slot
 
     @property
     def name(self) -> str:
@@ -218,14 +301,22 @@ class Event:
             and existing.name != self.name
         ):
             problems.append("name")
+        if (
+            self.use_weakref_slot is not None
+            and isinstance(existing, EventSlotWeakRef) != self.use_weakref_slot
+        ):
+            problems.append("weakref_slot")
+
         if problems:
             raise AttributeError(
                 f"EventSlot '{self.name}' on {type(instance)!r} has inconsistent parameters \
-                    compared to declared event descriptor. "
-                f"(existing: name={existing.name} propagate_exceptions={existing.propagate_exceptions}, "  # pylint: disable=line-too-long
-                f"allow_duplicate_listeners={existing.allow_duplicate_listeners}; "
-                f"declared: name={self.name} propagate_exceptions={self.propagate_exceptions}, "
-                f"allow_duplicate_listeners={self.allow_duplicate_listeners})"
+                    compared to declared event descriptor. (existing: name={existing.name} \
+                    propagate_exceptions={existing.propagate_exceptions}, \
+                    allow_duplicate_listeners={existing.allow_duplicate_listeners}; \
+                    weakref_slot={isinstance(existing, EventSlotWeakRef)}; "
+                f"declared: name={self.name} propagate_exceptions={self.propagate_exceptions}, \
+                    allow_duplicate_listeners={self.allow_duplicate_listeners}) \
+                    weakref_slot={self.use_weakref_slot}."
             )
 
         # assign desciptor parameters to existing slot if they were defaulted
@@ -249,10 +340,12 @@ class Event:
         if self.allow_duplicate_listeners is not None:
             kwargs["allow_duplicate_listeners"] = self.allow_duplicate_listeners
 
-        new_slot = EventSlot(self.name, **kwargs)
+        if self.use_weakref_slot is not None and self.use_weakref_slot:
+            new_slot = EventSlotWeakRef(self.name, **kwargs)
+        else:
+            new_slot = EventSlot(self.name, **kwargs)
+
         instance.__dict__[self.name] = new_slot
-        # not needed as event slot instance was created with params
-        # self.__param_check_with_existing_needed = False
         return new_slot
 
     def __set__(self, instance, value) -> None:
