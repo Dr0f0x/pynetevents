@@ -1,14 +1,9 @@
-EventSlot
+Event
 ---------
 
-.. autoclass:: pynetevents.EventSlot
+.. autoclass:: pynetevents.Event
    :members:
    :undoc-members:
    :show-inheritance:
-   :special-members: __call__, __add__, __sub__, __iter__, __len__, __getitem__, __set__
-
-EventsException
----------------
-
-.. autoclass:: pynetevents.EventsException
-   :members:
+   :inherited-members:
+   :special-members: __get__, __set__, __setname__, __init__,__set_name__

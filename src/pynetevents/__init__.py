@@ -53,13 +53,20 @@ Example:
     >>> on_data_received("Hello, World!")
 """
 
-from .events import EventSlot, EventSlotWeakRef, EventExecutionError, Event
+from .events import (
+    EventSlot,
+    EventSlotWeakRef,
+    EventExecutionError,
+    DuplicateEventListenerError,
+    Event,
+)
 
 __all__ = [
     "EventSlot",
     "EventSlotWeakRef",
     "Event",
     "EventExecutionError",
+    "DuplicateEventListenerError",
 ]
 
 __version__ = "0.1.1"

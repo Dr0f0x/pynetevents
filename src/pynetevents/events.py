@@ -28,9 +28,12 @@ event slots that can have multiple listeners (both synchronous and asynchronous)
 attached to them. When an event is fired, all attached listeners are called.
 
 Classes:
-    EventSlot: A slot to which callbacks can be attached and fired.
+    EventSlot: A slot to which callbacks can be attached to and fired.
+    EventSlotWeakRef: A slot to which callbacks can be attached to, using weak references
+    where possible and fired.
     Event: Descriptor for event slots in classes to restrict access to the event system.
-    EventsException: Base exception class for events-related errors.
+    EventsExecutionError: Error that is raised when a listeners execution throws.
+    DuplicateEventListenerError: Error that is raised when a duplictae listener is added.
 """
 
 from abc import ABC
@@ -52,6 +55,26 @@ class _EventSlotBase(ABC):
         propagate_exceptions: Optional[bool] = None,
         allow_duplicate_listeners: Optional[bool] = None,
     ):
+        """Create a Slot that stores, invokes, and manages event callbacks registered on itself.
+
+        Args:
+            name (Optional[str], optional):
+                The internal name of the event slot. Typically set automatically
+                by the descriptor when bound to a class attribute.
+            propagate_exceptions (Optional[bool], optional):
+                If True, exceptions raised by event listeners are propagated
+                to the caller. If False, exceptions are caught and suppressed.
+            allow_duplicate_listeners (Optional[bool], optional):
+                If True, the same listener function can be added multiple
+                times to the same event. If False, duplicate listeners
+                raise an exception.
+            use_weakref_slot (Optional[bool], optional):
+                If True, event listeners are stored as weak references if possible,
+                allowing the classes that the listeners belong to to be garbage collected.
+
+        If arguments are omitted the following defaults are used propagate_exceptions: True,
+        allow_duplicate_listeners: False
+        """
         self.name = name
         # If a flag is None, use EventSlot's default but record that it was defaulted.
         if propagate_exceptions is None:
@@ -80,7 +103,7 @@ class _EventSlotBase(ABC):
     def invoke(self, *args, **kwargs) -> None:
         """
         Invoke all listeners passing the given args and kwargs. Synchronous
-        listeners are called directly, while asynchronouslisteners are
+        listeners are called directly, while asynchronous listeners are
         scheduled (fire and forget).
         """
         dead_listeners = []
@@ -105,9 +128,7 @@ class _EventSlotBase(ABC):
                     listener_exc(*args, **kwargs)
             except Exception as e:  # pylint: disable=broad-except
                 if self.propagate_exceptions:
-                    raise EventExecutionError(
-                        f"Error in listener for event '{self.name}': {e}",
-                    ) from e
+                    raise EventExecutionError(e, self) from e
                 logger.error(
                     "Error in listener for event '%s': %s",
                     self.name,
@@ -145,9 +166,7 @@ class _EventSlotBase(ABC):
                     listener_exc(*args, **kwargs)
             except Exception as e:  # pylint: disable=broad-except
                 if self.propagate_exceptions:
-                    raise EventExecutionError(
-                        f"Error in listener for event '{self.name}': {e}",
-                    ) from e
+                    raise EventExecutionError(e, self) from e
                 logger.error(
                     "Error in listener for event '%s': %s",
                     self.name,
@@ -169,9 +188,11 @@ class _EventSlotBase(ABC):
             if listener not in self._listeners:
                 self._listeners.append(listener)
             else:
-                raise EventExecutionError(
+                raise DuplicateEventListenerError(
+                    self,
+                    listener,
                     f"Listener {listener} is already subscribed to event '{self.name}'. \
-                        (you can allow this by setting allow_duplicate_listeners=True)"
+                        (you can allow this by setting allow_duplicate_listeners=True)",
                 )
         else:
             self._listeners.append(listener)
@@ -200,11 +221,11 @@ class _EventSlotBase(ABC):
         self._unsubscribe(listener, use_weakref=False)
 
     def subscribe_weak(self, listener: Callable[..., Any]) -> None:
-        """Add a listener to the event slot using a weak reference."""
+        """Add a listener to the event slot using a weak reference if possible."""
         self._subscribe(listener, use_weakref=True)
 
     def unsubscribe_weak(self, listener: Callable[..., Any]) -> None:
-        """Remove a listener from the event slot that was added using a weak reference."""
+        """Remove a listener from the event slot that was possibly added using a weak reference."""
         self._unsubscribe(listener, use_weakref=True)
 
     # dunder methods
@@ -238,12 +259,12 @@ class EventSlot(_EventSlotBase):
 
     # Operator overloads for convenience
     def __iadd__(self, listener: Callable[..., Any]) -> "EventSlot":
-        """Adds a listener, used by the '+=' operator."""
+        """Adds a listener, internally calling :meth:`subscribe` (used by the '+=' operator)."""
         self.subscribe(listener)
         return self
 
     def __isub__(self, listener: Callable[..., Any]) -> "EventSlot":
-        """Removes a listener, used by the '-=' operator."""
+        """Removes a listener, internally calling :meth:`unsubscribe` (used by the '-=' operator)."""
         self.unsubscribe(listener)
         return self
 
@@ -254,12 +275,12 @@ class EventSlotWeakRef(_EventSlotBase):
 
     # Operator overloads for convenience
     def __iadd__(self, listener: Callable[..., Any]) -> "EventSlot":
-        """Adds a listener, used by the '+=' operator."""
+        """Adds a listener, internally calling :meth:`unsubscribe_weak` (used by the '+=' operator)."""
         self.subscribe_weak(listener)
         return self
 
     def __isub__(self, listener: Callable[..., Any]) -> "EventSlot":
-        """Removes a listener, used by the '-=' operator."""
+        """Removes a listener, internally calling :meth:`subscribe_weak` (used by the '-=' operator)."""
         self.unsubscribe_weak(listener)
         return self
 
@@ -273,6 +294,23 @@ class Event:
         allow_duplicate_listeners: Optional[bool] = None,
         use_weakref_slot: Optional[bool] = None,
     ):
+        """
+        Initialize an EventSlot descriptor.
+
+        Args:
+            propagate_exceptions (Optional[bool], optional):
+                If True, exceptions raised by event listeners are propagated
+                to the caller. If False, exceptions are caught and suppressed.
+            allow_duplicate_listeners (Optional[bool], optional):
+                If True, the same listener function can be added multiple
+                times to the same event. If False, duplicate listeners are
+                throw an exceptions
+            use_weakref_slot (Optional[bool], optional):
+                If True, event listeners are stored as weak references if possible,
+                allowing classes that the listeners belong to to be garbage collected.
+        If parameters are omitted the defaults (propagate_exceptions: True,
+        allow_duplicate_listeners: False, use_weakref_slot: False) are used.
+        """
         self.__name: Optional[str] = None
         self.propagate_exceptions: Optional[bool] = propagate_exceptions
         self.allow_duplicate_listeners: Optional[bool] = allow_duplicate_listeners
@@ -334,7 +372,7 @@ class Event:
         existing.name = self.name
 
     def __get__(self, instance, owner) -> "EventSlot":
-        """Get the event slot for the instance."""
+        """Get the `EventSlot` for the owner class instance."""
 
         existing = instance.__dict__.get(self.name)
         if existing is not None:
@@ -357,8 +395,9 @@ class Event:
 
     def __set__(self, instance, value) -> None:
         """
-        Allow only assignment that comes from in-place operations:
-        - If value is the same Event instance accept (no-op), otherwise, forbid reassignment.
+        Allows only assignment that comes from in-place operations (+= or -=),
+        more specifically restricts one to assigning only the same `EventSlot` instance to itself
+        (although it may be changed).
         """
 
         # Accept if user assigns back the exact event object (from +=/-=)
@@ -383,4 +422,49 @@ class Event:
 
 
 class EventExecutionError(Exception):
-    """Base exception class for events-related errors."""
+    """Exception raised when a listener execution throws an exception."""
+
+    def __init__(
+        self, eventslot_base: _EventSlotBase, original_exception=None, message=None
+    ):
+        self.__eventslot_base = eventslot_base
+        self.__original_exception = original_exception
+        msg = (
+            message
+            or f"Error {original_exception} occurred during execution of listener for event {eventslot_base.name}"
+        )
+        super().__init__(msg)
+
+    @property
+    def eventslot_base(self):
+        """The EventSlotBase instance where the error occurred."""
+        return self.__eventslot_base
+
+    @property
+    def original_exception(self):
+        """The original exception raised by the listener."""
+        return self.__original_exception
+
+
+class DuplicateEventListenerError(Exception):
+    """Exception raised when a a repetaed listener is added to an event that forbids doing so."""
+
+    def __init__(self, eventslot_base: _EventSlotBase, listener=None, message=None):
+        self.__eventslot_base = eventslot_base
+        self.__listener = listener
+        msg = (
+            message
+            or f"Listener {listener} is already subscribed to event '{eventslot_base.name}'. \
+                        (you can allow this by setting allow_duplicate_listeners=True)"
+        )
+        super().__init__(msg)
+
+    @property
+    def eventslot_base(self):
+        """The EventSlotBase instance where the error occurred."""
+        return self.__eventslot_base
+
+    @property
+    def listener(self):
+        """The dupicate listener that was added"""
+        return self.__listener

@@ -182,4 +182,4 @@ async def test_weak_ref_invoke_async_awaits_async():
 
 
 if __name__ == "__main__":
-    pytest.main("tests/eventslot_ref_test.py")
+    pytest.main(["tests/eventslot_ref_test.py"])

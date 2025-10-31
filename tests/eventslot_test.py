@@ -337,4 +337,4 @@ def test_eventslot_cannot_be_pickled():
 
 
 if __name__ == "__main__":
-    pytest.main("tests/eventslot_test.py")
+    pytest.main(["tests/eventslot_test.py"])

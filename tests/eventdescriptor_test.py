@@ -201,4 +201,4 @@ def test_weakref_descriptor_with_normal_slot_raises():
 
 
 if __name__ == "__main__":
-    pytest.main("tests/eventdescriptor_test.py")
+    pytest.main("[tests/eventdescriptor_test.py]")
