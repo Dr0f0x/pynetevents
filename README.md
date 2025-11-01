@@ -28,7 +28,7 @@ that provides simple, composable event slots — with support for both **strong*
 - [Exceptions](#exceptions)
 
 > For a full overview of all classes, methods, and options, check out the
-> [API Reference](#api-overview).
+> [API Reference](#api-ovettrvriew).
 
 ## Quick Start
 
