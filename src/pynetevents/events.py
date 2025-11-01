@@ -128,7 +128,7 @@ class _EventSlotBase(ABC):
                     listener_exc(*args, **kwargs)
             except Exception as e:  # pylint: disable=broad-except
                 if self.propagate_exceptions:
-                    raise EventExecutionError(e, self) from e
+                    raise EventExecutionError(self, e) from e
                 logger.error(
                     "Error in listener for event '%s': %s",
                     self.name,
@@ -166,7 +166,7 @@ class _EventSlotBase(ABC):
                     listener_exc(*args, **kwargs)
             except Exception as e:  # pylint: disable=broad-except
                 if self.propagate_exceptions:
-                    raise EventExecutionError(e, self) from e
+                    raise EventExecutionError(self, e) from e
                 logger.error(
                     "Error in listener for event '%s': %s",
                     self.name,
@@ -191,8 +191,8 @@ class _EventSlotBase(ABC):
                 raise DuplicateEventListenerError(
                     self,
                     listener,
-                    f"Listener {listener} is already subscribed to event '{self.name}'. \
-                        (you can allow this by setting allow_duplicate_listeners=True)",
+                    f"Listener {listener} is already subscribed to event '{self.name}'. "
+                    f"(you can allow this by setting allow_duplicate_listeners=True)",
                 )
         else:
             self._listeners.append(listener)
@@ -264,7 +264,9 @@ class EventSlot(_EventSlotBase):
         return self
 
     def __isub__(self, listener: Callable[..., Any]) -> "EventSlot":
-        """Removes a listener, internally calling :meth:`unsubscribe` (used by the '-=' operator)."""
+        """
+        Removes a listener, internally calling :meth:`unsubscribe` (used by the '-=' operator).
+        """
         self.unsubscribe(listener)
         return self
 
@@ -275,12 +277,16 @@ class EventSlotWeakRef(_EventSlotBase):
 
     # Operator overloads for convenience
     def __iadd__(self, listener: Callable[..., Any]) -> "EventSlot":
-        """Adds a listener, internally calling :meth:`unsubscribe_weak` (used by the '+=' operator)."""
+        """
+        Adds a listener, internally calling :meth:`unsubscribe_weak` (used by the '+=' operator).
+        """
         self.subscribe_weak(listener)
         return self
 
     def __isub__(self, listener: Callable[..., Any]) -> "EventSlot":
-        """Removes a listener, internally calling :meth:`subscribe_weak` (used by the '-=' operator)."""
+        """
+        Removes a listener, internally calling :meth:`subscribe_weak` (used by the '-=' operator).
+        """
         self.unsubscribe_weak(listener)
         return self
 
@@ -354,14 +360,14 @@ class Event:
 
         if problems:
             raise AttributeError(
-                f"EventSlot '{self.name}' on {type(instance)!r} has inconsistent parameters \
-                    compared to declared event descriptor. (existing: name={existing.name} \
-                    propagate_exceptions={existing.propagate_exceptions}, \
-                    allow_duplicate_listeners={existing.allow_duplicate_listeners}; \
-                    weakref_slot={isinstance(existing, EventSlotWeakRef)}; "
-                f"declared: name={self.name} propagate_exceptions={self.propagate_exceptions}, \
-                    allow_duplicate_listeners={self.allow_duplicate_listeners}) \
-                    weakref_slot={self.use_weakref_slot}."
+                f"EventSlot '{self.name}' on {type(instance)!r} has inconsistent parameters "
+                f"compared to declared event descriptor. (existing: name={existing.name} "
+                f"propagate_exceptions={existing.propagate_exceptions}, "
+                f"allow_duplicate_listeners={existing.allow_duplicate_listeners}; "
+                f"weakref_slot={isinstance(existing, EventSlotWeakRef)}; "
+                f"declared: name={self.name} propagate_exceptions={self.propagate_exceptions}, "
+                f"allow_duplicate_listeners={self.allow_duplicate_listeners}) "
+                f"weakref_slot={self.use_weakref_slot}."
             )
 
         # assign desciptor parameters to existing slot if they were defaulted
@@ -410,14 +416,13 @@ class Event:
                 instance.__dict__[self.name] = value
                 return
             raise TypeError(
-                f"Tried to assign a non-EventSlot value to event attribute '{self.name}'\
-                        on {type(instance)!r} "
-                f"(found {type(value)!r})."
+                f"Tried to assign a non-EventSlot value to event attribute '{self.name}' "
+                f"on {type(instance)!r} (found {type(value)!r})."
             )
 
         raise AttributeError(
             f"Event '{self.name}' can only be modified via '+=' or '-=' operations. (or set to "
-            + "modified versions of same instance)",
+            f"modified versions of same instance)",
         )
 
 
@@ -431,7 +436,8 @@ class EventExecutionError(Exception):
         self.__original_exception = original_exception
         msg = (
             message
-            or f"Error {original_exception} occurred during execution of listener for event {eventslot_base.name}"
+            or f"Error {original_exception} occurred during execution of listener for event "
+            f"'{eventslot_base.name}'"
         )
         super().__init__(msg)
 
@@ -454,8 +460,8 @@ class DuplicateEventListenerError(Exception):
         self.__listener = listener
         msg = (
             message
-            or f"Listener {listener} is already subscribed to event '{eventslot_base.name}'. \
-                        (you can allow this by setting allow_duplicate_listeners=True)"
+            or f"Listener {listener} is already subscribed to event '{eventslot_base.name}'. "
+            f"(you can allow this by setting allow_duplicate_listeners=True)"
         )
         super().__init__(msg)
 

@@ -7,7 +7,7 @@ import pickle
 from unittest.mock import Mock
 import pytest
 
-from pynetevents import EventSlot, EventExecutionError
+from pynetevents import EventSlot, EventExecutionError, DuplicateEventListenerError
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=missing-class-docstring
@@ -109,7 +109,7 @@ def test_duplicate_listeners_with_not_allowed_throws_exception():
 
     # Add the same listener multiple times
     slot.subscribe(listener)
-    with pytest.raises(EventExecutionError) as excinfo:
+    with pytest.raises(DuplicateEventListenerError) as excinfo:
         slot.subscribe(listener)
         slot += listener
         slot += listener
@@ -235,7 +235,10 @@ def test_listener_with_propagate_true_propagates_exceptions():
 
     with pytest.raises(EventExecutionError) as excinfo:
         slot()
-    assert "Error in listener for event 'test_exception'" in excinfo.value.args[0]
+    assert (
+        "occurred during execution of listener for event 'test_exception'"
+        in excinfo.value.args[0]
+    )
 
 
 @pytest.mark.asyncio
@@ -258,7 +261,10 @@ async def test_async_listener_with_propagate_false_propagate_exceptions():
 
     with pytest.raises(EventExecutionError) as excinfo:
         await slot.invoke_async()
-    assert "Error in listener for event 'test_async_exception'" in excinfo.value.args[0]
+    assert (
+        "occurred during execution of listener for event 'test_async_exception'"
+        in excinfo.value.args[0]
+    )
 
 
 def test_listener_with_propagate_false_only_logs(monkeypatch):
@@ -337,4 +343,5 @@ def test_eventslot_cannot_be_pickled():
 
 
 if __name__ == "__main__":
+    test_listener_with_propagate_true_propagates_exceptions()
     pytest.main(["tests/eventslot_test.py"])
