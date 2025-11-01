@@ -54,6 +54,7 @@ Quick Start
     pip install pynetevents
 
 **Usage**
+
 .. code-block:: python
 
     import asyncio
