@@ -18,6 +18,11 @@ dependencies = [
 ]
 requires-python = ">=3.8"
 
+[project.urls]
+Github= "https://github.com/Dr0f0x/pynetevents"
+API-Reference= "https://dr0f0x.github.io/pynetevents/"
+
+
 [project.optional-dependencies]
 dev = ["black", "pytest", "pytest-cov", "pytest-asyncio", "bumpver"]
 packaging = ["build", "twine"]

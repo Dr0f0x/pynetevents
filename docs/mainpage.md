@@ -20,7 +20,8 @@ A lightweight, flexible **C#-like event system** in Python supporting
 - [Event Descriptor](#event-descriptor)
 - [Exceptions](#exceptions)
 
-> Check the [API Reference](#api-overview) for full details.
+> Check the [API Reference](https://dr0f0x.github.io/pynetevents/) for full
+> details.
 
 ## Quick Start
 

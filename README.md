@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/Dr0f0x/pynetevents/actions/workflows/python-ci.yml/badge.svg)](https://github.com/Dr0f0x/pynetevents/actions/workflows/python-ci.yml)
 [![Publish](https://github.com/Dr0f0x/pynetevents/actions/workflows/publish.yml/badge.svg)](https://github.com/Dr0f0x/pynetevents/actions/workflows/publish.yml)
+[![codecov](https://codecov.io/gh/Dr0f0x/pynetevents/graph/badge.svg?token=UU36EX1TP2)](https://codecov.io/gh/Dr0f0x/pynetevents)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/8aeb45d8e38d4bdbbb1904d14ac104e3)](https://app.codacy.com/gh/Dr0f0x/pynetevents/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
 A lightweight, flexible implementation of a **C#-like event system** in Python
 that provides simple, composable event slots — with support for both **strong**
@@ -28,7 +30,7 @@ that provides simple, composable event slots — with support for both **strong*
 - [Exceptions](#exceptions)
 
 > For a full overview of all classes, methods, and options, check out the
-> [API Reference](#api-ovettrvriew).
+> [API Reference](https://dr0f0x.github.io/pynetevents/).
 
 ## Quick Start
 
