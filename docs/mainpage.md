@@ -24,14 +24,6 @@ A lightweight, flexible **C#-like event system** in Python supporting
 
 ## Quick Start
 
-**Installl**
-
-```bash
-pip install pynetevents
-```
-
-**Usage**
-
 ```python
 import asyncio
 from pynetevents import Event

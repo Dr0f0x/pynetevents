@@ -38,6 +38,8 @@ that provides simple, composable event slots — with support for both **strong*
 pip install pynetevents
 ```
 
+#### Usage
+
 ```python
 import asyncio
 from pynetevents import Event
