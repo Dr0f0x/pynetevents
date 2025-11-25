@@ -157,10 +157,10 @@ slot("World!")  # -> No output (listener no longer exists)
 Both of these classes have the inherited methods `subscribe`,`subscribe_weak`,
 `unsubscribe`, `unsubscribe_weak` that come from their common base class which
 in theory makes it possible to subscribe using a weakref to the normal
-`EventSlot`, although i would recommend aganst doing so, as it is bound to be
+`EventSlot`, although i would recommend against doing so, as it is bound to be
 very confusing.
 
-Instead the easier way would be to use the overloaded `+=` and `-=` operators,
+Instead the easier way would be to use the `+=` and `-=` operators,
 like the examples above do, that are overriden for these classes. For an
 `EventSlot` instance they use the `subscribe` and `unsubscribe` methods under
 the hood and for the `EventSlotWeakRef` the according alternatives.
@@ -193,7 +193,7 @@ slot("Fire-and-forget example")
 asyncio.run(slot.invoke_async("Awaited example"))
 ```
 
-An `EventSlot` can be invoked with any kind of arguments that will be properly
+An `EventSlot` can be invoked with any kind of arguments, these will be properly
 forwarded to all the listeners (which of course must be able to accept them). As
 a short cut for calling the sync invoke method one can also call the EventSlot
 itself, which will do the exact same.
@@ -217,7 +217,7 @@ slot("Another payload", status=404)
 
 `EventSlots` can be configured in their behaviour by using the constructor
 arguments. You can customize whether you want exceptions to be propagated or
-only logged and wether you want to allow duplicate_listeners or throw an
+only logged and whether you want to allow duplicate listeners or throw an
 exception like the default.
 
 ```python
@@ -246,7 +246,7 @@ custom_slot = EventSlot(
 
 In addition to the `Slot` classes the package offers a custom descriptor for
 declaring `EventSlots` as class attributes, that restricts access to the
-attribute and allows for some other benefits. This decriptor is simply called
+attribute and allows for some other benefits. This descriptor is simply called
 `Event` as I would recommend it as the main way of declaring and using this
 event implementation.
 
@@ -289,8 +289,8 @@ The `__set_name` method gets the name of the `Event` attribute and uses it for
 the created `EventSlots`.
 
 The `Event` provides the same configuration options as the `EventSlots`
-(propagate_excpetions, allow_duplicate_listeners) and additionally one to choose
-wether created instances should be `EventSlotWeakRef` or normal ones.
+(propagate_exceptions, allow_duplicate_listeners) and additionally one to choose
+whether created instances should be `EventSlotWeakRef` or normal ones.
 
 ```python
 from pynetevents import Event
@@ -315,7 +315,7 @@ configurations must match (or not be passed in the constructor of the slot
 object). Basically, if the descriptor wants to use a **weak reference slot**
 (`EventSlotWeakRef`) but the found instance is a **normal `EventSlot`**, or if
 any configuration parameter like `propagate_exceptions` or
-`allow_duplicate_listeners` does not match, the descriptor will **raise an
+`allow_duplicate_listeners` do not match, the descriptor will **raise an
 error**.
 
 ```python
